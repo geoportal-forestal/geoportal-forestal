@@ -1,57 +1,100 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Geoportal Forestal — debug mínimo</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    #map { height: 100vh; width: 100%; }
-    .logo { position:absolute; top:10px; left:10px; z-index:1000; background:#fff; padding:6px 10px; border-radius:8px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.15); }
-  </style>
-  <!-- Leaflet CSS (sin SRI para evitar problemas de copia) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Geoportal Forestal — Supabase + Leaflet</title>
+<style>
+html, body { height: 100%; margin: 0; }
+#map { height: 100vh; width: 100%; }
+.logo { position:absolute; top:10px; left:10px; z-index:1000; background:#fff; padding:6px 10px; border-radius:8px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-  <div id="map"></div>
-  <div class="logo">Geoportal Forestal</div>
+<div id="map"></div>
+<div class="logo">Geoportal Forestal</div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Supabase JS -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script>
-  // 1) Config Supabase (tus valores):
-  const SUPABASE_URL = "https://ruvxmyplclsxqrxjbwon.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dnhteXBsY2xzeHFyeGpid29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NTAyNjMsImV4cCI6MjA3MjUyNjI2M30.7IE7-ivCPUZZebsOH9OFgtQaL1EaI3TAOqgWa1Og32Y";
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// 1) Config Supabase (tus valores):
+const SUPABASE_URL = "https://ruvxmyplclsxqrxjbwon.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dnhteXBsY2xzeHFyeGpid29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NTAyNjMsImV4cCI6MjA3MjUyNjI2M30.7IE7-ivCPUZZebsOH9OFgtQaL1EaI3TAOqgWa1Og32Y";
 
-  // 2) Mapa base
-  const map = L.map('map').setView([-2.0, -79.0], 7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
-  console.log('Leaflet cargado');
 
-  // 3) Cliente Supabase (usa el esquema plantabal)
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'public' } });
-  console.log('Supabase cliente OK');
+// Cliente en esquema PUBLIC (tu API expone public)
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'public' } });
 
-  // 4) Cargar Land_use completo
-  async function cargarLandUse() {
-    try {
-      const { data, error } = await supabase.from('v_landuse_geo').select('*');
-      if (error) { console.error('Error Supabase:', error); alert('Error cargando v_landuse_geo (revisa consola)'); return; }
-      console.log('Filas land_use:', data?.length);
-      if (!data || !data.length) { alert('v_landuse_geo no devolvió filas'); return; }
-      const fc = { type: 'FeatureCollection', features: data.map(r => ({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) };
-      const layer = L.geoJSON(fc, { style: { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.45 }, onEachFeature: (f,l) => l.bindPopup(`<b>Uso de suelo:</b> ${f.properties.uso_suelo ?? ''}`) });
-      layer.addTo(map);
-      try { map.fitBounds(layer.getBounds(), { padding: [20,20] }); } catch(e) {}
-    } catch (e) {
-      console.error(e);
-      alert('Fallo inesperado cargando Land_use (revisa consola)');
-    }
-  }
-  cargarLandUse();
-  </script>
+
+// 2) Mapa base
+const map = L.map('map').setView([-2.0, -79.0], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+
+
+// 3) Helpers comunes
+const toFC = (rows) => ({ type:'FeatureCollection', features:(rows||[]).map(r=>({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) });
+async function loadView(viewName, style, pointToLayer, onEachFeature) {
+const { data, error } = await supabase.from(viewName).select('*');
+if (error) { console.error('Error Supabase:', error); alert(`Error cargando ${viewName}`); return null; }
+if (!data || !data.length) { console.warn(`${viewName} vacío`); return null; }
+const layer = L.geoJSON(toFC(data), { style, pointToLayer, onEachFeature });
+layer.addTo(map);
+return layer;
+}
+
+
+// 4) Estilos y popups
+const styleLand = { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.45 };
+const styleRoad = { color:'#D84315', weight:3 };
+const styleLinea = { color:'#1565C0', weight:2, dashArray:'4,3' };
+const styleAvance = { color:'#6A1B9A', weight:1, fillColor:'#CE93D8', fillOpacity:.35 };
+const pointAserrio = (f,latlng) => L.circleMarker(latlng,{ radius:6, stroke:true, weight:1, fillOpacity:.9 });
+const popLand = (f,l)=> l.bindPopup(`<b>Uso de suelo:</b> ${f.properties.uso_suelo ?? ''}`);
+const popRoad = (f,l)=> l.bindPopup(`<b>Vía:</b> ${f.properties.type_road ?? ''}`);
+const popLinea = (f,l)=> l.bindPopup(`<b>Línea de arrastre</b>`);
+const popAvance = (f,l)=> l.bindPopup(`<b>Avance de cosecha</b>`);
+const popAserr = (f,l)=> l.bindPopup(`<b>Aserrío</b><br>${[f.properties.lon,f.properties.lat].filter(Boolean).join(', ')}`);
+
+
+// 5) Vistas en PUBLIC
+const VIEWS = {
+landuse: 'v_landuse_geo',
+roadsAsfalto: 'v_roads_asfalto_geo',
+lineas: 'v_lineas_arrastre_geo',
+avance: 'v_avance_cosecha_geo',
+aserrios: 'v_aserrios_geo'
+};
+
+
+// 6) Cargar capas y control de capas
+(async () => {
+const overlays = {};
+
+
+const land = await loadView(VIEWS.landuse, styleLand, null, popLand);
+if (land) { overlays['Uso de suelo'] = land; try { map.fitBounds(land.getBounds(), {padding:[20,20]}); } catch(e){} }
+
+
+const roads = await loadView(VIEWS.roadsAsfalto, styleRoad, null, popRoad);
+if (roads) overlays['Vías asfaltadas'] = roads;
+
+
+const lineas = await loadView(VIEWS.lineas, styleLinea, null, popLinea);
+if (lineas) overlays['Líneas de arrastre'] = lineas;
+
+
+const av = await loadView(VIEWS.avance, styleAvance, null, popAvance);
+if (av) overlays['Avance de cosecha'] = av;
+
+
+const as = await loadView(VIEWS.aserrios, null, pointAserrio, popAserr);
+if (as) overlays['Aserríos'] = as;
+
+
+L.control.layers({}, overlays, { collapsed:false }).addTo(map);
+})();
+</script>
 </body>
 </html>
