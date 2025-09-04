@@ -7,19 +7,14 @@
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100vh; width: 100%; }
-    .logo {
-      position: absolute; top: 10px; left: 60px; /* desplazado para no tapar el zoom */
-      z-index: 1000; background: #fff; padding: 6px 10px; border-radius: 8px;
-      font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.15);
-    }
+    .title-control{ background:#fff; padding:6px 10px; border-radius:8px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.15); }
     .leaflet-control-layers { max-height: 70vh; overflow: auto; }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
   <div id="map"></div>
-  <div class="logo">Geoportal Forestal</div>
-
+  
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -38,6 +33,14 @@
   const map = L.map('map', { zoomControl: true, layers: [baseOSM] }).setView([-2.0, -79.0], 8);
   const baseMaps = { 'OSM': baseOSM, 'Carto Light': baseCarto, 'ESRI Satélite': baseEsri };
   const layerControl = L.control.layers(baseMaps, {}, { collapsed:false }).addTo(map);
+  // Título como control Leaflet (queda debajo del zoom, sin solaparse)
+  const titleCtl = L.control({ position: 'topleft' });
+  titleCtl.onAdd = function(m){
+    const div = L.DomUtil.create('div','title-control');
+    div.innerHTML = 'Geoportal Forestal';
+    return div;
+  };
+  titleCtl.addTo(map);
 
   // 3) Helpers comunes
   const toFC = (rows) => ({ type:'FeatureCollection', features:(rows||[]).map(r=>({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) });
