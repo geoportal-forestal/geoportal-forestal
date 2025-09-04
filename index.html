@@ -9,23 +9,25 @@
     #map { height: 100vh; width: 100%; }
     .title-control{ background:#fff; padding:6px 10px; border-radius:8px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.15); }
     .leaflet-control-layers { max-height: 70vh; overflow: auto; }
+    .toolbox-control { background:#fff; padding:8px 10px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.15); font: 12px/1.2 system-ui, sans-serif; }
+    .toolbox-control button { margin:2px 0; width:100%; }
+    .toolbox-control label { display:block; margin-top:6px; }
+    .toolbox-control input[type="range"] { width: 160px; }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
   <div id="map"></div>
-  
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-  // 1) Config Supabase (tus valores):
+  // 1) Config Supabase (tus valores)
   const SUPABASE_URL = "https://ruvxmyplclsxqrxjbwon.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dnhteXBsY2xzeHFyeGpid29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NTAyNjMsImV4cCI6MjA3MjUyNjI2M30.7IE7-ivCPUZZebsOH9OFgtQaL1EaI3TAOqgWa1Og32Y";
-
-  // Cliente en esquema PUBLIC (tu API expone public)
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'public' } });
 
-  // 2) Mapa base + bases alternas (para control)
+  // 2) Mapa base + controles
   const baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
   const baseCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' });
   const baseEsri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
@@ -33,16 +35,14 @@
   const map = L.map('map', { zoomControl: true, layers: [baseOSM] }).setView([-2.0, -79.0], 8);
   const baseMaps = { 'OSM': baseOSM, 'Carto Light': baseCarto, 'ESRI Satélite': baseEsri };
   const layerControl = L.control.layers(baseMaps, {}, { collapsed:false }).addTo(map);
-  // Título como control Leaflet (queda debajo del zoom, sin solaparse)
+  L.control.scale({ metric:true, imperial:false }).addTo(map);
+
+  // Título como control Leaflet (sin solaparse con el zoom)
   const titleCtl = L.control({ position: 'topleft' });
-  titleCtl.onAdd = function(m){
-    const div = L.DomUtil.create('div','title-control');
-    div.innerHTML = 'Geoportal Forestal';
-    return div;
-  };
+  titleCtl.onAdd = function(){ const div = L.DomUtil.create('div','title-control'); div.innerHTML = 'Geoportal Forestal'; return div; };
   titleCtl.addTo(map);
 
-  // 3) Helpers comunes
+  // 3) Helpers para cargar vistas
   const toFC = (rows) => ({ type:'FeatureCollection', features:(rows||[]).map(r=>({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) });
   async function loadView(viewName, options) {
     const { style, pointToLayer, onEachFeature, label } = options || {};
@@ -52,40 +52,103 @@
     const layer = L.geoJSON(toFC(data), { style, pointToLayer, onEachFeature });
     layer.addTo(map);
     if (label) layerControl.addOverlay(layer, label);
-    return layer;
+    return { layer, data };
   }
 
   // 4) Estilos y popups
-  const styleLand   = { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.45 };
-  const styleRoad   = { color:'#D84315', weight:3 };
-  const styleLinea  = { color:'#1565C0', weight:2, dashArray:'4,3' };
-  const styleAvance = { color:'#6A1B9A', weight:1, fillColor:'#CE93D8', fillOpacity:.35 };
+  const styleLand   = { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.35 };
+  const styleRoad   = { color:'#D84315', weight:3, opacity:0.9 };
   const pointAserrio = (f,latlng) => L.circleMarker(latlng,{ radius:6, stroke:true, weight:1, fillOpacity:.9 });
   const popLand  = (f,l)=> l.bindPopup(`<b>Uso de suelo:</b> ${f.properties.uso_suelo ?? ''}`);
   const popRoad  = (f,l)=> l.bindPopup(`<b>Vía:</b> ${f.properties.type_road ?? ''}`);
-  const popLinea = (f,l)=> l.bindPopup(`<b>Línea de arrastre</b>`);
-  const popAv    = (f,l)=> l.bindPopup(`<b>Avance de cosecha</b>`);
   const popAs    = (f,l)=> l.bindPopup(`<b>Aserrío</b>`);
 
-  // 5) Vistas en PUBLIC
+  // 5) Vistas en PUBLIC (solo 3 capas)
   const VIEWS = {
     landuse: 'v_landuse_geo',            // public
     roadsAsfalto: 'v_roads_asfalto_geo', // public
-    lineas: 'v_lineas_arrastre_geo',     // public
-    avance: 'v_avance_cosecha_geo',      // public
     aserrios: 'v_aserrios_geo'           // public
   };
 
-  // 6) Cargar capas y ajustar a la primera que llegue
+  const layers = {};      // guardamos referencias de capas
+  const dataCache = {};   // guardamos datos crudos para exportar
+
+  // 6) Cargar capas
   (async () => {
     const land = await loadView(VIEWS.landuse, { style: styleLand,  onEachFeature: popLand,  label: 'Uso de suelo' });
-    if (land) { try { map.fitBounds(land.getBounds(), { padding:[20,20] }); } catch(e){} }
+    if (land) { layers.land = land.layer; dataCache.land = land.data; try { map.fitBounds(land.layer.getBounds(), { padding:[20,20] }); } catch(e){} }
 
-    await loadView(VIEWS.roadsAsfalto, { style: styleRoad, onEachFeature: popRoad, label: 'Vías asfaltadas' });
-    await loadView(VIEWS.lineas,       { style: styleLinea, onEachFeature: popLinea, label: 'Líneas de arrastre' });
-    await loadView(VIEWS.avance,       { style: styleAvance, onEachFeature: popAv,    label: 'Avance de cosecha' });
-    await loadView(VIEWS.aserrios,     { pointToLayer: pointAserrio, onEachFeature: popAs, label: 'Aserríos' });
+    const roads = await loadView(VIEWS.roadsAsfalto, { style: styleRoad, onEachFeature: popRoad, label: 'Vías asfaltadas' });
+    if (roads) { layers.roads = roads.layer; dataCache.roads = roads.data; }
+
+    const as = await loadView(VIEWS.aserrios, { pointToLayer: pointAserrio, onEachFeature: popAs, label: 'Aserríos' });
+    if (as)   { layers.aserrios = as.layer; dataCache.aserrios = as.data; }
   })();
+
+  // 7) Herramientas extra (control)
+  const toolsCtl = L.control({ position: 'topleft' });
+  toolsCtl.onAdd = function(){
+    const wrap = L.DomUtil.create('div','toolbox-control');
+    wrap.innerHTML = `
+      <button id="btnHome">Vista inicial</button>
+      <button id="btnLocate">Mi ubicación</button>
+      <label>Opacidad uso de suelo <input id="opLand" type="range" min="0" max="1" step="0.05" value="0.35"></label>
+      <label>Opacidad vías <input id="opRoad" type="range" min="0" max="1" step="0.05" value="0.9"></label>
+      <button id="btnExport">Descargar uso de suelo (GeoJSON)</button>
+    `;
+    // Evitar que el control capture el scroll del mapa
+    L.DomEvent.disableClickPropagation(wrap);
+    return wrap;
+  };
+  toolsCtl.addTo(map);
+
+  // Acciones de herramientas
+  function fitAll() {
+    const gs = [];
+    if (layers.land) gs.push(layers.land.getBounds());
+    if (layers.roads) gs.push(layers.roads.getBounds());
+    if (layers.aserrios) gs.push(layers.aserrios.getBounds());
+    if (gs.length){
+      let b = gs[0];
+      for (let i=1;i<gs.length;i++) b = b.extend(gs[i]);
+      map.fitBounds(b, { padding:[20,20] });
+    } else {
+      map.setView([-2.0,-79.0],8);
+    }
+  }
+
+  document.addEventListener('click', (e)=>{
+    if (e.target.id==='btnHome') fitAll();
+    if (e.target.id==='btnLocate') {
+      map.locate({ setView:true, maxZoom:14 });
+    }
+    if (e.target.id==='btnExport') {
+      if (!dataCache.land || !dataCache.land.length) { alert('Capa uso de suelo aún no está cargada'); return; }
+      const fc = toFC(dataCache.land);
+      const blob = new Blob([JSON.stringify(fc)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'uso_suelo.geojson'; a.click();
+      URL.revokeObjectURL(url);
+    }
+  });
+
+  document.addEventListener('input', (e)=>{
+    if (e.target.id==='opLand' && layers.land) {
+      const v = parseFloat(e.target.value);
+      layers.land.setStyle({ fillOpacity: v });
+    }
+    if (e.target.id==='opRoad' && layers.roads) {
+      const v = parseFloat(e.target.value);
+      layers.roads.setStyle({ opacity: v });
+    }
+  });
+
+  // Popup de coordenadas al hacer clic en el mapa
+  map.on('click', (ev)=>{
+    const { lat, lng } = ev.latlng;
+    L.popup().setLatLng(ev.latlng).setContent(`Lat: ${lat.toFixed(5)}<br>Lon: ${lng.toFixed(5)}`).openOn(map);
+  });
   </script>
 </body>
 </html>
