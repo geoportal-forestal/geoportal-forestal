@@ -1,100 +1,88 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Geoportal Forestal — Supabase + Leaflet</title>
-<style>
-html, body { height: 100%; margin: 0; }
-#map { height: 100vh; width: 100%; }
-.logo { position:absolute; top:10px; left:10px; z-index:1000; background:#fff; padding:6px 10px; border-radius:8px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,.15); }
-</style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Geoportal Forestal — Supabase + Leaflet</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100vh; width: 100%; }
+    .logo {
+      position: absolute; top: 10px; left: 60px; /* desplazado para no tapar el zoom */
+      z-index: 1000; background: #fff; padding: 6px 10px; border-radius: 8px;
+      font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .leaflet-control-layers { max-height: 70vh; overflow: auto; }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-<div id="map"></div>
-<div class="logo">Geoportal Forestal</div>
+  <div id="map"></div>
+  <div class="logo">Geoportal Forestal</div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+  // 1) Config Supabase (tus valores):
+  const SUPABASE_URL = "https://ruvxmyplclsxqrxjbwon.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dnhteXBsY2xzeHFyeGpid29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NTAyNjMsImV4cCI6MjA3MjUyNjI2M30.7IE7-ivCPUZZebsOH9OFgtQaL1EaI3TAOqgWa1Og32Y";
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-// 1) Config Supabase (tus valores):
-const SUPABASE_URL = "https://ruvxmyplclsxqrxjbwon.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dnhteXBsY2xzeHFyeGpid29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NTAyNjMsImV4cCI6MjA3MjUyNjI2M30.7IE7-ivCPUZZebsOH9OFgtQaL1EaI3TAOqgWa1Og32Y";
+  // Cliente en esquema PUBLIC (tu API expone public)
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'public' } });
 
+  // 2) Mapa base + bases alternas (para control)
+  const baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+  const baseCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' });
+  const baseEsri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
 
-// Cliente en esquema PUBLIC (tu API expone public)
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'public' } });
+  const map = L.map('map', { zoomControl: true, layers: [baseOSM] }).setView([-2.0, -79.0], 8);
+  const baseMaps = { 'OSM': baseOSM, 'Carto Light': baseCarto, 'ESRI Satélite': baseEsri };
+  const layerControl = L.control.layers(baseMaps, {}, { collapsed:false }).addTo(map);
 
+  // 3) Helpers comunes
+  const toFC = (rows) => ({ type:'FeatureCollection', features:(rows||[]).map(r=>({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) });
+  async function loadView(viewName, options) {
+    const { style, pointToLayer, onEachFeature, label } = options || {};
+    const { data, error } = await supabase.from(viewName).select('*');
+    if (error) { console.error('Error Supabase:', error); alert(`Error cargando ${viewName}`); return null; }
+    if (!data || !data.length) { console.warn(`${viewName} vacío`); return null; }
+    const layer = L.geoJSON(toFC(data), { style, pointToLayer, onEachFeature });
+    layer.addTo(map);
+    if (label) layerControl.addOverlay(layer, label);
+    return layer;
+  }
 
-// 2) Mapa base
-const map = L.map('map').setView([-2.0, -79.0], 7);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+  // 4) Estilos y popups
+  const styleLand   = { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.45 };
+  const styleRoad   = { color:'#D84315', weight:3 };
+  const styleLinea  = { color:'#1565C0', weight:2, dashArray:'4,3' };
+  const styleAvance = { color:'#6A1B9A', weight:1, fillColor:'#CE93D8', fillOpacity:.35 };
+  const pointAserrio = (f,latlng) => L.circleMarker(latlng,{ radius:6, stroke:true, weight:1, fillOpacity:.9 });
+  const popLand  = (f,l)=> l.bindPopup(`<b>Uso de suelo:</b> ${f.properties.uso_suelo ?? ''}`);
+  const popRoad  = (f,l)=> l.bindPopup(`<b>Vía:</b> ${f.properties.type_road ?? ''}`);
+  const popLinea = (f,l)=> l.bindPopup(`<b>Línea de arrastre</b>`);
+  const popAv    = (f,l)=> l.bindPopup(`<b>Avance de cosecha</b>`);
+  const popAs    = (f,l)=> l.bindPopup(`<b>Aserrío</b>`);
 
+  // 5) Vistas en PUBLIC
+  const VIEWS = {
+    landuse: 'v_landuse_geo',            // public
+    roadsAsfalto: 'v_roads_asfalto_geo', // public
+    lineas: 'v_lineas_arrastre_geo',     // public
+    avance: 'v_avance_cosecha_geo',      // public
+    aserrios: 'v_aserrios_geo'           // public
+  };
 
-// 3) Helpers comunes
-const toFC = (rows) => ({ type:'FeatureCollection', features:(rows||[]).map(r=>({ type:'Feature', geometry: (typeof r.geometry==='string'? JSON.parse(r.geometry): r.geometry), properties: r })) });
-async function loadView(viewName, style, pointToLayer, onEachFeature) {
-const { data, error } = await supabase.from(viewName).select('*');
-if (error) { console.error('Error Supabase:', error); alert(`Error cargando ${viewName}`); return null; }
-if (!data || !data.length) { console.warn(`${viewName} vacío`); return null; }
-const layer = L.geoJSON(toFC(data), { style, pointToLayer, onEachFeature });
-layer.addTo(map);
-return layer;
-}
+  // 6) Cargar capas y ajustar a la primera que llegue
+  (async () => {
+    const land = await loadView(VIEWS.landuse, { style: styleLand,  onEachFeature: popLand,  label: 'Uso de suelo' });
+    if (land) { try { map.fitBounds(land.getBounds(), { padding:[20,20] }); } catch(e){} }
 
-
-// 4) Estilos y popups
-const styleLand = { color:'#2E7D32', weight:1, fillColor:'#A5D6A7', fillOpacity:0.45 };
-const styleRoad = { color:'#D84315', weight:3 };
-const styleLinea = { color:'#1565C0', weight:2, dashArray:'4,3' };
-const styleAvance = { color:'#6A1B9A', weight:1, fillColor:'#CE93D8', fillOpacity:.35 };
-const pointAserrio = (f,latlng) => L.circleMarker(latlng,{ radius:6, stroke:true, weight:1, fillOpacity:.9 });
-const popLand = (f,l)=> l.bindPopup(`<b>Uso de suelo:</b> ${f.properties.uso_suelo ?? ''}`);
-const popRoad = (f,l)=> l.bindPopup(`<b>Vía:</b> ${f.properties.type_road ?? ''}`);
-const popLinea = (f,l)=> l.bindPopup(`<b>Línea de arrastre</b>`);
-const popAvance = (f,l)=> l.bindPopup(`<b>Avance de cosecha</b>`);
-const popAserr = (f,l)=> l.bindPopup(`<b>Aserrío</b><br>${[f.properties.lon,f.properties.lat].filter(Boolean).join(', ')}`);
-
-
-// 5) Vistas en PUBLIC
-const VIEWS = {
-landuse: 'v_landuse_geo',
-roadsAsfalto: 'v_roads_asfalto_geo',
-lineas: 'v_lineas_arrastre_geo',
-avance: 'v_avance_cosecha_geo',
-aserrios: 'v_aserrios_geo'
-};
-
-
-// 6) Cargar capas y control de capas
-(async () => {
-const overlays = {};
-
-
-const land = await loadView(VIEWS.landuse, styleLand, null, popLand);
-if (land) { overlays['Uso de suelo'] = land; try { map.fitBounds(land.getBounds(), {padding:[20,20]}); } catch(e){} }
-
-
-const roads = await loadView(VIEWS.roadsAsfalto, styleRoad, null, popRoad);
-if (roads) overlays['Vías asfaltadas'] = roads;
-
-
-const lineas = await loadView(VIEWS.lineas, styleLinea, null, popLinea);
-if (lineas) overlays['Líneas de arrastre'] = lineas;
-
-
-const av = await loadView(VIEWS.avance, styleAvance, null, popAvance);
-if (av) overlays['Avance de cosecha'] = av;
-
-
-const as = await loadView(VIEWS.aserrios, null, pointAserrio, popAserr);
-if (as) overlays['Aserríos'] = as;
-
-
-L.control.layers({}, overlays, { collapsed:false }).addTo(map);
-})();
-</script>
+    await loadView(VIEWS.roadsAsfalto, { style: styleRoad, onEachFeature: popRoad, label: 'Vías asfaltadas' });
+    await loadView(VIEWS.lineas,       { style: styleLinea, onEachFeature: popLinea, label: 'Líneas de arrastre' });
+    await loadView(VIEWS.avance,       { style: styleAvance, onEachFeature: popAv,    label: 'Avance de cosecha' });
+    await loadView(VIEWS.aserrios,     { pointToLayer: pointAserrio, onEachFeature: popAs, label: 'Aserríos' });
+  })();
+  </script>
 </body>
 </html>
